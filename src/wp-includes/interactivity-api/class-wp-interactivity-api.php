@@ -238,6 +238,8 @@ final class WP_Interactivity_API {
 	 * it returns null if the HTML contains unbalanced tags.
 	 *
 	 * @since 6.5.0
+	 * @since 6.6.0 The function now adds a warning when the HTML contains unbalanced
+	 * tags or SVG/Math with directives.
 	 *
 	 * @param string $html            The HTML content to process.
 	 * @param array  $context_stack   The reference to the array used to keep track of contexts during processing.
@@ -261,6 +263,11 @@ final class WP_Interactivity_API {
 			 * We still process the rest of the HTML.
 			 */
 			if ( 'SVG' === $tag_name || 'MATH' === $tag_name ) {
+				if ( $p->get_attribute_names_with_prefix( 'data-wp-' ) || str_contains( $p->get_updated_html(), 'data-wp-' ) ) {
+					/* translators: 1: SVG or MATH HTML tag. */
+					$message = sprintf( '%1s tags are currently incompatible with the directives processing. Please refrain from adding directives to them.', $tag_name );
+					_doing_it_wrong( __METHOD__, $message, '6.6' );
+				}
 				$p->skip_to_tag_closer();
 				continue;
 			}
@@ -276,6 +283,9 @@ final class WP_Interactivity_API {
 					 * stops processing it.
 					 */
 					$unbalanced = true;
+					/* translators: 1: Tag that caused the error, could by any HTML tag. */
+					$message = sprintf( 'Due to an unbalanced %1s tag in the processed HTML, the directives will not be server side processed, JS runtime still work, but there will be a layout shift.', $tag_name );
+					_doing_it_wrong( __METHOD__, $message, '6.6' );
 					break;
 				} else {
 					// Remove the last tag from the stack.

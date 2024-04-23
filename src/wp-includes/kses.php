@@ -981,7 +981,7 @@ function wp_kses_split( $content, $allowed_html, $allowed_protocols ) {
 	$pass_allowed_html      = $allowed_html;
 	$pass_allowed_protocols = $allowed_protocols;
 
-	return preg_replace_callback( '%(<!--.*?(-->|$))|(<[^>]*(>|$)|>)%', '_wp_kses_split_callback', $content );
+	return preg_replace_callback( '%((?:<!--.*?(-->|$))|</[^a-z][^>]*>)|(<[^>]*(>|$)|>)%', '_wp_kses_split_callback', $content );
 }
 
 /**
@@ -1083,6 +1083,11 @@ function wp_kses_split2( $content, $allowed_html, $allowed_protocols ) {
 	// It matched a ">" character.
 	if ( ! str_starts_with( $content, '<' ) ) {
 		return '&gt;';
+	}
+
+	// Allows Bits.
+	if ( 1 === preg_match( '~</[^a-z][^>]*>~', $content ) ) {
+		return $content;
 	}
 
 	// Allow HTML comments.

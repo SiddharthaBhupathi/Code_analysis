@@ -1714,6 +1714,8 @@ function render_block( $parsed_block ) {
  * @return array[] Array of parsed block objects.
  */
 function parse_blocks( $content ) {
+	$content = wp_replace_bits( $content );
+
 	/**
 	 * Filter to allow plugins to replace the server-side block parser.
 	 *

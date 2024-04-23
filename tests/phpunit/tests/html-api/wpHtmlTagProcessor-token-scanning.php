@@ -814,6 +814,73 @@ HTML
 	}
 
 	/**
+	 * Verifies that the Tag Processor detects the proper token
+	 * boundaries necessary for substring operations.
+	 *
+	 * @since 6.6.0
+	 *
+	 * @covers WP_HTML_Tag_Processor::next_token
+	 *
+	 * @dataProvider data_wrapped_single_tokens
+	 *
+	 * @param string $raw_token HTML containing a test token.
+	 */
+	public function test_records_exact_token_boundaries( $raw_token ) {
+		$processor = new class( "<div>before<!-->{$raw_token}</>after<img>" ) extends WP_HTML_Tag_Processor {
+			/**
+			 * Return the raw token from the input document at the currently-matched token.
+			 *
+			 * @return string Full raw token from input document at currently-matched token.
+			 */
+			public function get_raw_token() {
+				$this->set_bookmark( 'here' );
+				$mark = $this->bookmarks['here'];
+
+				return substr( $this->html, $mark->start, $mark->length );
+			}
+		};
+
+		$processor->next_token(); // Skip the initial DIV.
+		$processor->next_token(); // Skip the "before" text.
+		$processor->next_token(); // Skip the comment.
+
+		$this->assertTrue( $processor->next_token(), 'Failed to find inner token.' );
+		$this->assertSame(
+			$raw_token,
+			$processor->get_raw_token(),
+			'Identified token does not match expected raw text.'
+		);
+	}
+
+	/**
+	 * Data provider.
+	 *
+	 * @return array[].
+	 */
+	public static function data_wrapped_single_tokens() {
+		return array(
+			'DOCTYPE declaration'     => array( '<!DOCTYPE html>' ),
+			'Void tag'                => array( '<img>' ),
+			'Void tag w/attrs'        => array( '<br class="full-break">' ),
+			'Tag opener'              => array( '<p>' ),
+			'Tag opener w/attrs'      => array( '<body data-is-light>' ),
+			'Tag closer'              => array( '</div>' ),
+			'Tag closer w/attrs'      => array( '</div ignore=me>' ),
+			'Text node'               => array( 'test' ),
+			'Text with references'    => array( '&hellip;' ),
+			'Normative comment'       => array( '<!-- comment -->' ),
+			'CDATA-like comment'      => array( '<![CDATA[not here]]>' ),
+			'PI-node like comment'    => array( '<?php echo "hi"; ?>' ),
+			'Presumptuous tag'        => array( '</>' ),
+			'Funky comment'           => array( '<//wp:post-author>' ),
+			'Abruptly-closed comment' => array( '<!-->' ),
+			'Invalid comment closer'  => array( '<!-- :) --!>' ),
+			'XMP tag'                 => array( '<xmp>some &amp; more</xmp>' ),
+			'SCRIPT tag'              => array( '<script type="module">console.log("<img>")</script>' ),
+		);
+	}
+
+	/**
 	 * Test helper that wraps a string in double quotes.
 	 *
 	 * @param string $s The string to wrap in double-quotes.

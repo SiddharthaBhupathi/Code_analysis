@@ -59,7 +59,7 @@ class Tests_HtmlApi_WpHtmlTagProcessor extends WP_UnitTestCase {
 	 * @dataProvider data_has_self_closing_flag
 	 *
 	 * @param string $html Input HTML whose first tag might contain the self-closing flag `/`.
-	 * @param bool $flag_is_set Whether the input HTML's first tag contains the self-closing flag.
+	 * @param bool   $flag_is_set Whether the input HTML's first tag contains the self-closing flag.
 	 */
 	public function test_has_self_closing_flag_matches_input_html( $html, $flag_is_set ) {
 		$processor = new WP_HTML_Tag_Processor( $html );
@@ -2746,7 +2746,7 @@ HTML
 			public function insert_after( $new_html ) {
 				$this->set_bookmark( 'here' );
 				$this->lexical_updates[] = new WP_HTML_Text_Replacement(
-					$this->bookmarks['here']->start + $this->bookmarks['here']->length + 1,
+					$this->bookmarks['here']->start + $this->bookmarks['here']->length,
 					0,
 					$new_html
 				);

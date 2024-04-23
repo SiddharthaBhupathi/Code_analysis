@@ -178,6 +178,8 @@ class WP_Script_Modules {
 		add_action( $position, array( $this, 'print_import_map' ) );
 		add_action( $position, array( $this, 'print_enqueued_script_modules' ) );
 		add_action( $position, array( $this, 'print_script_module_preloads' ) );
+
+		add_action( 'wp_footer', array( $this, 'print_script_data' ) );
 	}
 
 	/**
@@ -296,7 +298,6 @@ class WP_Script_Modules {
 	 *
 	 * @since 6.5.0
 	 *
-
 	 * @param string[] $ids          The identifiers of the script modules for which to gather dependencies.
 	 * @param array    $import_types Optional. Import types of dependencies to retrieve: 'static', 'dynamic', or both.
 	 *                               Default is both.
@@ -359,5 +360,28 @@ class WP_Script_Modules {
 		$src = apply_filters( 'script_module_loader_src', $src, $id );
 
 		return $src;
+	}
+
+	public function print_script_data(): void {
+		$modules = array();
+		foreach ( array_keys( $this->get_marked_for_enqueue() ) as $id ) {
+			$modules[ $id ] = true;
+		}
+		foreach ( array_keys( $this->get_import_map()['imports'] ) as $id ) {
+			$modules[ $id ] = true;
+		}
+
+		foreach ( array_keys( $modules ) as $module_id ) {
+			$config = apply_filters( 'scriptmoduledata_' . $module_id, array() );
+			if ( ! empty( $config ) ) {
+				wp_print_inline_script_tag(
+					wp_json_encode( $config, JSON_HEX_TAG | JSON_HEX_AMP ),
+					array(
+						'type' => 'application/json',
+						'id'   => 'wp-scriptmodule-data_' . $module_id,
+					)
+				);
+			}
+		}
 	}
 }

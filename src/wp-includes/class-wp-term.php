@@ -100,6 +100,22 @@ final class WP_Term {
 	public $filter = 'raw';
 
 	/**
+	 * Stores the object ID.
+	 *
+	 * @since 6.6.0
+	 * @var int|null
+	 */
+	public $object_id;
+
+	/**
+	 * Stores the sanitized term data.
+	 *
+	 * @since 6.6.0
+	 * @var stdClass|null
+	 */
+	private $data;
+
+	/**
 	 * Retrieve WP_Term instance.
 	 *
 	 * @since 4.4.0
@@ -219,27 +235,110 @@ final class WP_Term {
 	 * @return array Object as array.
 	 */
 	public function to_array() {
-		return get_object_vars( $this );
+		$object_data = get_object_vars( $this );
+		// Don't return the "data" class property to ensure backward compatibility.
+		unset( $object_data['data'] );
+
+		return $object_data;
 	}
 
 	/**
 	 * Getter.
 	 *
 	 * @since 4.4.0
+	 * @since 6.6.0 Getting a dynamic property is deprecated.
 	 *
 	 * @param string $key Property to get.
-	 * @return mixed Property value.
+	 * @return object|null Property value.
 	 */
 	public function __get( $key ) {
-		switch ( $key ) {
-			case 'data':
-				$data    = new stdClass();
-				$columns = array( 'term_id', 'name', 'slug', 'term_group', 'term_taxonomy_id', 'taxonomy', 'description', 'parent', 'count' );
-				foreach ( $columns as $column ) {
-					$data->{$column} = isset( $this->{$column} ) ? $this->{$column} : null;
-				}
-
-				return sanitize_term( $data, $data->taxonomy, 'raw' );
+		if ( 'data' !== $key ) {
+			wp_trigger_error(
+				__METHOD__,
+				sprintf( 'Getting the dynamic property "%s" on %s is deprecated.', $key, __CLASS__ ),
+				E_USER_DEPRECATED
+			);
+			return null;
 		}
+
+		$this->data = new stdClass();
+		$columns    = array(
+			'term_id',
+			'name',
+			'slug',
+			'term_group',
+			'term_taxonomy_id',
+			'taxonomy',
+			'description',
+			'parent',
+			'count',
+		);
+		foreach ( $columns as $column ) {
+			$this->data->{$column} = isset( $this->{$column} ) ? $this->{$column} : null;
+		}
+
+		return sanitize_term( $this->data, $this->data->taxonomy, 'raw' );
+	}
+
+	/**
+	 * Checks if the "data" class property exists.
+	 * Returns false for dynamic class properties since dynamic class properties are deprecated.
+	 *
+	 * @since 6.6.0
+	 *
+	 * @param string $key Property to check.
+	 * @return bool True if the property exists, false otherwise.
+	 */
+	public function __isset( $key ) {
+		if ( 'data' === $key ) {
+			return isset( $this->data );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Sets the "data" class property.
+	 * Triggers an error when attempting to set a dynamic class property since dynamic class
+	 * properties are deprecated.
+	 *
+	 * @since 6.6.0
+	 *
+	 * @param string $key   The name of the property to set.
+	 * @param mixed  $value The value to set.
+	 */
+	public function __set( $key, $value ) {
+		if ( 'data' === $key ) {
+			$this->data = $value;
+			return;
+		}
+
+		wp_trigger_error(
+			__METHOD__,
+			sprintf( 'Setting the dynamic property "%s" on %s is deprecated.', $key, __CLASS__ ),
+			E_USER_DEPRECATED
+		);
+	}
+
+	/**
+	 * Unsets the "data" class property.
+	 * Triggers an error when attempting to unset a dynamic class property since dynamic class
+	 * properties are deprecated.
+	 *
+	 * @since 6.6.0
+	 *
+	 * @param string $key The name of the property to unset.
+	 */
+	public function __unset( $key ) {
+		if ( 'data' === $key ) {
+			unset( $this->$key );
+			return;
+		}
+
+		wp_trigger_error(
+			__METHOD__,
+			sprintf( 'Unsetting the dynamic property "%s" on %s is deprecated.', $key, __CLASS__ ),
+			E_USER_DEPRECATED
+		);
 	}
 }

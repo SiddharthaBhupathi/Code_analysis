@@ -751,8 +751,15 @@ SCRIPT_TAG;
 	private function evaluate( $directive_value ) {
 		$generate_state = function ( $name ) {
 			return array(
-				'key'    => $name,
-				'nested' => array( 'key' => $name . '-nested' ),
+				'key'     => $name,
+				'nested'  => array( 'key' => $name . '-nested' ),
+				'derived' => function ( $store ) {
+					return 'Derived state: ' .
+						$store['state']['key'] .
+						"\n" .
+						'Derived context: ' .
+						$store['context']['key'];
+				},
 			);
 		};
 		$this->interactivity->state( 'myPlugin', $generate_state( 'myPlugin-state' ) );
@@ -855,6 +862,18 @@ SCRIPT_TAG;
 
 		$result = $this->evaluate( 'otherPlugin::context.nested.key' );
 		$this->assertEquals( 'otherPlugin-context-nested', $result );
+	}
+
+	/**
+	 * Tests the `evaluate` method for derived state functions.
+	 *
+	 * @ticket 61037
+	 *
+	 * @covers ::evaluate
+	 */
+	public function test_evaluate_derived_state() {
+		$result = $this->evaluate( 'state.derived' );
+		$this->assertEquals( "Derived state: myPlugin-state\nDerived context: myPlugin-context", $result );
 	}
 
 	/**

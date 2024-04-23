@@ -7,6 +7,19 @@
  * @since 6.4.0
  */
 
+class WP_HTML_Element_Operation {
+	/** @var WP_HTML_Token */
+	public $token;
+
+	/** @var string either "open" or "close" */
+	public $operation;
+
+	public function __construct( $token, $operation ) {
+		$this->token     = $token;
+		$this->operation = $operation;
+	}
+}
+
 /**
  * Core class used to safely parse and modify an HTML document.
  *
@@ -201,6 +214,17 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 */
 	private $release_internal_bookmark_on_destruct = null;
 
+	/** @var WP_HTML_Element_Operation[] */
+	private $element_queue = array();
+
+	/** @var WP_HTML_Element_Operation */
+	private $current_element = null;
+
+	/** @var ?WP_HTML_Token context node if created as a fragment parser. */
+	private $context_node = null;
+
+	private $has_seen_context_node = false;
+
 	/*
 	 * Public Interface Functions
 	 */
@@ -257,13 +281,14 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			)
 		);
 
-		$processor->state->stack_of_open_elements->push(
-			new WP_HTML_Token(
-				'context-node',
-				$processor->state->context_node[0],
-				false
-			)
+		$context_node = new WP_HTML_Token(
+			'context-node',
+			$processor->state->context_node[0],
+			false
 		);
+
+		$processor->state->stack_of_open_elements->push( $context_node );
+		$processor->context_node = $context_node;
 
 		return $processor;
 	}
@@ -298,6 +323,14 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 		}
 
 		$this->state = new WP_HTML_Processor_State();
+
+		$this->state->stack_of_open_elements->add_push_handler( function ( WP_HTML_Token $token ) {
+			$this->element_queue[] = new WP_HTML_Element_Operation( $token, 'open' );
+		} );
+
+		$this->state->stack_of_open_elements->add_pop_handler( function ( WP_HTML_Token $token ) {
+			$this->element_queue[] = new WP_HTML_Element_Operation( $token, 'close' );
+		} );
 
 		/*
 		 * Create this wrapper so that it's possible to pass
@@ -365,7 +398,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 					continue;
 				}
 
-				if ( ! $this->is_tag_closer() ) {
+				if ( ! parent::is_tag_closer() ) {
 					return true;
 				}
 			}
@@ -392,7 +425,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 					continue;
 				}
 
-				if ( ! $this->is_tag_closer() ) {
+				if ( ! parent::is_tag_closer() ) {
 					return true;
 				}
 			}
@@ -440,7 +473,31 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 * @return bool
 	 */
 	public function next_token() {
-		return $this->step();
+		$this->current_element = null;
+
+		if ( 0 === count( $this->element_queue ) && ! $this->step() ) {
+			while ( $this->state->stack_of_open_elements->pop() ) {
+				continue;
+			}
+		}
+
+		$this->current_element = array_shift( $this->element_queue );
+		while ( isset( $this->context_node ) && ! $this->has_seen_context_node ) {
+			if ( isset( $this->current_element ) ) {
+				if ( $this->context_node === $this->current_element->token && 'open' === $this->current_element->operation ) {
+					$this->has_seen_context_node = true;
+					return $this->next_token();
+				}
+			}
+			$this->current_element = array_shift( $this->element_queue );
+		}
+		return null !== $this->current_element;
+	}
+
+	public function is_tag_closer() {
+		return isset( $this->current_element )
+			? ( 'close' === $this->current_element->operation )
+			: parent::is_tag_closer();
 	}
 
 	/**
@@ -629,7 +686,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	private function step_in_body() {
 		$token_name = $this->get_token_name();
 		$token_type = $this->get_token_type();
-		$op_sigil   = '#tag' === $token_type ? ( $this->is_tag_closer() ? '-' : '+' ) : '';
+		$op_sigil   = '#tag' === $token_type ? ( parent::is_tag_closer() ? '-' : '+' ) : '';
 		$op         = "{$op_sigil}{$token_name}";
 
 		switch ( $op ) {
@@ -1152,7 +1209,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				throw new WP_HTML_Unsupported_Exception( "Cannot process {$token_name} element." );
 		}
 
-		if ( ! $this->is_tag_closer() ) {
+		if ( ! parent::is_tag_closer() ) {
 			/*
 			 * > Any other start tag
 			 */
@@ -1248,6 +1305,10 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			return null;
 		}
 
+		if ( isset( $this->current_element ) ) {
+			return $this->current_element->token->node_name;
+		}
+
 		$tag_name = parent::get_tag();
 
 		switch ( $tag_name ) {
@@ -1261,6 +1322,42 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			default:
 				return $tag_name;
 		}
+	}
+
+	public function get_token_name() {
+		if ( isset( $this->current_element ) ) {
+			return $this->current_element->token->node_name;
+		}
+
+		return parent::get_token_name();
+	}
+
+	public function get_token_type() {
+		if ( isset( $this->current_element ) ) {
+			$node_name = $this->current_element->token->node_name;
+			if ( ctype_upper( $node_name[0] ) ) {
+				return '#tag';
+			}
+
+			if ( 'html' === $node_name ) {
+				return '#doctype';
+			}
+
+			return $node_name;
+		}
+
+		return parent::get_token_type();
+	}
+
+	/**
+	 * Return how deep the currently-matched element is in the HTML document.
+	 *
+	 * @since 6.6.0
+	 *
+	 * @return int
+	 */
+	public function get_depth() {
+		return $this->state->stack_of_open_elements->count();
 	}
 
 	/**
@@ -1359,6 +1456,8 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			parent::seek( 'context-node' );
 			$this->state->insertion_mode = WP_HTML_Processor_State::INSERTION_MODE_IN_BODY;
 			$this->state->frameset_ok    = true;
+			$this->element_queue         = array();
+			$this->current_element       = null;
 		}
 
 		// When moving forwards, reparse the document until reaching the same location as the original bookmark.

@@ -51,6 +51,18 @@ class WP_HTML_Open_Elements {
 	 */
 	private $has_p_in_button_scope = false;
 
+	private $pop_handler = null;
+
+	private $push_handler = null;
+
+	public function add_pop_handler( Closure $handler ) {
+		$this->pop_handler = $handler;
+	}
+
+	public function add_push_handler( Closure $handler ) {
+		$this->push_handler = $handler;
+	}
+
 	/**
 	 * Reports if a specific node is in the stack of open elements.
 	 *
@@ -429,6 +441,10 @@ class WP_HTML_Open_Elements {
 				$this->has_p_in_button_scope = true;
 				break;
 		}
+
+		if ( null !== $this->push_handler ) {
+			( $this->push_handler )( $item );
+		}
 	}
 
 	/**
@@ -457,6 +473,10 @@ class WP_HTML_Open_Elements {
 			case 'P':
 				$this->has_p_in_button_scope = $this->has_element_in_button_scope( 'P' );
 				break;
+		}
+
+		if ( null !== $this->pop_handler ) {
+			( $this->pop_handler )( $item );
 		}
 	}
 }

@@ -248,6 +248,95 @@ function get_option( $option, $default_value = false ) {
 }
 
 /**
+ *
+ * @since 6.6.0
+ *
+ * @global wpdb $wpdb WordPress database abstraction object.
+ *
+ * @param string[] $options An array of option names to be loaded.
+ */
+function wp_prime_network_option_caches( $network_id = null, array $options = array() ) {
+	global $wpdb;
+
+	if ( wp_installing() ) {
+		return;
+	}
+
+	if ( ! is_multisite() ) {
+		wp_prime_option_caches( $options );
+		return;
+	}
+
+	if ( empty( $network_id ) ) {
+		$network_id = get_current_network_id();
+	}
+
+	$cache_keys = array();
+	foreach ( $options as $option ) {
+		$cache_keys[ $option ] = "{$network_id}:{$option}";
+	}
+
+	$cache_group    = 'site-options';
+	$cached_options = wp_cache_get_multiple( array_values( $cache_keys ), $cache_group );
+
+	$notoptions_key = "$network_id:notoptions";
+	$notoptions     = wp_cache_get( $notoptions_key, $cache_group );
+
+	if ( ! is_array( $notoptions ) ) {
+		$notoptions = array();
+	}
+
+	// Filter options that are not in the cache.
+	$options_to_prime = array();
+	foreach ( $cache_keys as $option => $cache_key ) {
+		if (
+			( ! isset( $cached_options[ $cache_key ] ) || false === $cached_options[ $cache_key ] )
+			&& ! isset( $notoptions[ $option ] )
+		) {
+			$options_to_prime[] = $option;
+		}
+	}
+
+	// Bail early if there are no options to be loaded.
+	if ( empty( $options_to_prime ) ) {
+		return;
+	}
+
+	$core_options_in = "'" . implode( "', '", $options_to_prime ) . "'";
+	$options         = $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, meta_value FROM $wpdb->sitemeta WHERE meta_key IN ($core_options_in) AND site_id = %d", $network_id ) );
+
+	$data          = array();
+	$options_found = array();
+	foreach ( $options as $option ) {
+		$key                = $option->meta_key;
+		$cache_key          = $cache_keys[ $key ];
+		$data[ $cache_key ] = maybe_unserialize( $option->meta_value );
+		$options_found[]    = $key;
+	}
+	wp_cache_set_multiple( $data, $cache_group );
+	// If all options were found, no need to update `notoptions` cache.
+	if ( count( $options_found ) === count( $options_to_prime ) ) {
+		return;
+	}
+
+	$options_not_found = array_diff( $options_to_prime, $options_found );
+
+	// Add the options that were not found to the cache.
+	$update_notoptions = false;
+	foreach ( $options_not_found as $option_name ) {
+		if ( ! isset( $notoptions[ $option_name ] ) ) {
+			$notoptions[ $option_name ] = true;
+			$update_notoptions          = true;
+		}
+	}
+
+	// Only update the cache if it was modified.
+	if ( $update_notoptions ) {
+		wp_cache_set( $notoptions_key, $notoptions, $cache_group );
+	}
+}
+
+/**
  * Primes specific options into the cache with a single database query.
  *
  * Only options that do not already exist in cache will be loaded.
@@ -647,46 +736,17 @@ function wp_load_alloptions( $force_cache = false ) {
  *
  * @since 3.0.0
  * @since 6.3.0 Also prime caches for network options when persistent object cache is enabled.
- *
- * @global wpdb $wpdb WordPress database abstraction object.
+ * @since 6.6.0 Uses wp_prime_network_option_caches.
  *
  * @param int $network_id Optional. Network ID of network for which to prime network options cache. Defaults to current network.
  */
 function wp_load_core_site_options( $network_id = null ) {
-	global $wpdb;
-
 	if ( ! is_multisite() || wp_installing() ) {
 		return;
 	}
-
-	if ( empty( $network_id ) ) {
-		$network_id = get_current_network_id();
-	}
-
 	$core_options = array( 'site_name', 'siteurl', 'active_sitewide_plugins', '_site_transient_timeout_theme_roots', '_site_transient_theme_roots', 'site_admins', 'can_compress_scripts', 'global_terms_enabled', 'ms_files_rewriting' );
 
-	if ( wp_using_ext_object_cache() ) {
-		$cache_keys = array();
-		foreach ( $core_options as $option ) {
-			$cache_keys[] = "{$network_id}:{$option}";
-		}
-		wp_cache_get_multiple( $cache_keys, 'site-options' );
-
-		return;
-	}
-
-	$core_options_in = "'" . implode( "', '", $core_options ) . "'";
-	$options         = $wpdb->get_results( $wpdb->prepare( "SELECT meta_key, meta_value FROM $wpdb->sitemeta WHERE meta_key IN ($core_options_in) AND site_id = %d", $network_id ) );
-
-	$data = array();
-	foreach ( $options as $option ) {
-		$key                = $option->meta_key;
-		$cache_key          = "{$network_id}:$key";
-		$option->meta_value = maybe_unserialize( $option->meta_value );
-
-		$data[ $cache_key ] = $option->meta_value;
-	}
-	wp_cache_set_multiple( $data, 'site-options' );
+	wp_prime_network_option_caches( $network_id, $core_options );
 }
 
 /**
